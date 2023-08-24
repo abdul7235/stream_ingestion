@@ -9,7 +9,8 @@ from utils.monitor_stream import monitor_rtmp_stream
 
 
 def publisher(rtmp_link, uid):
-    connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq_container'))
+    #connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq_container'))
+    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     channel = connection.channel()
     print(f"Hello {uid}")
     vid_dir = f"{uid}_chunks"
@@ -17,9 +18,9 @@ def publisher(rtmp_link, uid):
 
     queue_set = set()
     flag = [True]
-    channel.queue_declare(queue=f"{uid}_frames")
-    channel.queue_declare(queue=f"{uid}_audio")
-
+    #channel.queue_declare(queue=f"{uid}_frames")
+    #channel.queue_declare(queue=f"{uid}_audio")
+    channel.queue_declare(queue=f"{uid}_stream_data")
 
     if not os.path.exists(vid_dir):
         os.makedirs(vid_dir)
@@ -41,7 +42,8 @@ def publisher(rtmp_link, uid):
     stream_monitor_thread.start()
 
     while flag[0]:
-
+        stream_data ={}
+        stream_data['uid'] = uid
         file_list = os.listdir(vid_dir)
         for filename in file_list:
             if (filename not in queue_set):
@@ -49,6 +51,7 @@ def publisher(rtmp_link, uid):
                 if (check_video_duration(vid_dir, filename) >= 1.0):
 
                     queue_set.add(filename)
+                    stream_data['timestamp'] = filenanme
                     cc =0
                     cap = cv2.VideoCapture(f"{vid_dir}/{filename}")
 
@@ -59,8 +62,8 @@ def publisher(rtmp_link, uid):
                             if cc % 40 == 0:
                                 _, buffer = cv2.imencode('.jpg', frame)  
                                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                                channel.basic_publish(exchange='', routing_key=f"{uid}_frames", body=frame_base64)
-
+                                #channel.basic_publish(exchange='', routing_key=f"{uid}_frames", body=frame_base64)
+                                stream_data['frame'] = frame_base64
                         else:
                             cap.release()
                             break
@@ -72,9 +75,11 @@ def publisher(rtmp_link, uid):
                     
                     process_audio = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     audio_base64 = base64.b64encode(open(f"{aud_dir}/{wav_file_name}", "rb").read())
-                    channel.basic_publish(exchange='', routing_key=f"{uid}_audio", body=audio_base64)
+                    #channel.basic_publish(exchange='', routing_key=f"{uid}_audio", body=audio_base64)
+                    stream_data['audio'] = audio_base64
+                    channel.basic_publish(exchange='', routing_key=f"{uid}_stream_data", body=stream_data)
                     if os.path.exists(f"{vid_dir}/{filename}"):
-                        os.remove(f"{vid_dir}/{filename}")
+                        os.remove(f"{vid_dir}/{filename}") 
                     if os.path.exists(f"{aud_dir}/{wav_file_name}"):
                         os.remove(f"{aud_dir}/{wav_file_name}")
 
