@@ -1,45 +1,56 @@
-import pika
 import os
+import json
+import pika
 import base64
+import time
 import cv2
+import numpy as np
+import wave
 
+# RabbitMQ connection parameters
+RABBITMQ_HOST = 'localhost'
+QUEUE_NAME = 'uid_stream_data'
+ 
+# Maximum consecutive empty queue count before exiting
+MAX_EMPTY_COUNT = 60
 
-rabbitmq_host = 'localhost'
-queue_name = '123_frames'
+def save_image_frame(uid, timestamp, frame_data):
+    frame_array = np.frombuffer(base64.b64decode(frame_data), dtype=np.uint8)
+    frame = cv2.imdecode(frame_array, flags=cv2.IMREAD_COLOR)
+    cv2.imwrite(f'{uid}_{timestamp}.jpg', frame)
 
-
-def save_image_to_disk(image_data, image_count):
-    image_data = base64.b64decode(image_data)
-    image_filename = f"frames/image_{image_count}.jpg"
-    
-    with open(image_filename, 'wb') as image_file:
-        image_file.write(image_data)
-    
-    print(f"Image {image_count} saved to {image_filename}")
-
+def save_audio(uid, timestamp, audio_data):
+    audio_path = f'{uid}_{timestamp}.wav'
+    with wave.open(audio_path, 'wb') as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(44100)
+        wav_file.writeframes(audio_data)
 
 def callback(ch, method, properties, body):
-    global image_count
-    save_image_to_disk(body, image_count)
-    image_count += 1
+    data = json.loads(body)
+    uid = data['uid']
+    timestamp = data['timestamp']
+    frame_data = data['frame']
+    audio_data = data['audio']
 
+    save_image_frame(uid, timestamp, frame_data)
+    save_audio(uid, timestamp, audio_data)
 
-if not os.path.exists('frames'):
-    os.mkdir('frames')
+    print(f"Processed message: {uid}_{timestamp}")
 
+    callback.count = getattr(callback, 'count', 0) + 1
+    if callback.count >= MAX_EMPTY_COUNT:
+        print("Exiting program due to empty queue.")
+        ch.stop_consuming()
 
-connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
-channel = connection.channel()
+def subscriber(uid):
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+    channel = connection.channel()
 
+    channel.queue_declare(queue=QUEUE_NAME)
 
-channel.queue_declare(queue=queue_name)
+    channel.basic_consume(queue=QUEUE_NAME, on_message_callback=callback, auto_ack=True)
 
-
-image_count = 0
-
-
-channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
-
-
-print("Waiting for messages. To exit press CTRL+C")
-channel.start_consuming()
+    print("Waiting for messages. To exit press CTRL+C")
+    channel.start_consuming()
