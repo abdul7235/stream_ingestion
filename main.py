@@ -12,3 +12,4 @@ async def start_publisher(requestData: RequestData):
 
 #celery -A worker worker --pool=solo -l info
 #celery -A worker worker --loglevel=INFO
+#uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2

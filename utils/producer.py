@@ -4,12 +4,14 @@ import os
 import subprocess
 import base64
 import pika
-import threading
+import threading 
 from utils.monitor_stream import monitor_rtmp_stream
+import json
 
 
 def publisher(rtmp_link, uid):
     #connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq_container'))
+    
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     channel = connection.channel()
     print(f"Hello {uid}")
@@ -42,47 +44,50 @@ def publisher(rtmp_link, uid):
     stream_monitor_thread.start()
 
     while flag[0]:
-        stream_data ={}
-        stream_data['uid'] = uid
-        file_list = os.listdir(vid_dir)
-        for filename in file_list:
-            if (filename not in queue_set):
+        try:
+            stream_data ={}
+            stream_data['uid'] = uid
+            file_list = os.listdir(vid_dir)
+            for filename in file_list:
+                if (filename not in queue_set):
 
-                if (check_video_duration(vid_dir, filename) >= 1.0):
+                    if (check_video_duration(vid_dir, filename) >= 1.0):
 
-                    queue_set.add(filename)
-                    stream_data['timestamp'] = filenanme
-                    cc =0
-                    cap = cv2.VideoCapture(f"{vid_dir}/{filename}")
+                        queue_set.add(filename)
+                        stream_data['timestamp'] = filename
+                        cc =0
+                        cap = cv2.VideoCapture(f"{vid_dir}/{filename}")
 
-                    
-                    while True:
-                        ret, frame = cap.read()
-                        if ret:
-                            if cc % 40 == 0:
-                                _, buffer = cv2.imencode('.jpg', frame)  
-                                frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                                #channel.basic_publish(exchange='', routing_key=f"{uid}_frames", body=frame_base64)
-                                stream_data['frame'] = frame_base64
-                        else:
-                            cap.release()
-                            break
-                        cc+=1
-                    wav_file_name = filename[:-4]+".wav"
-                    
-                    command = ["ffmpeg", "-i" ,f"{vid_dir}/{filename}","-acodec", "pcm_s16le" ,"-ac", "1", "-ar" ,"16000","-y", 
-                    f"{aud_dir}/{wav_file_name}" ]
-                    
-                    process_audio = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    audio_base64 = base64.b64encode(open(f"{aud_dir}/{wav_file_name}", "rb").read())
-                    #channel.basic_publish(exchange='', routing_key=f"{uid}_audio", body=audio_base64)
-                    stream_data['audio'] = audio_base64
-                    channel.basic_publish(exchange='', routing_key=f"{uid}_stream_data", body=stream_data)
-                    if os.path.exists(f"{vid_dir}/{filename}"):
-                        os.remove(f"{vid_dir}/{filename}") 
-                    if os.path.exists(f"{aud_dir}/{wav_file_name}"):
-                        os.remove(f"{aud_dir}/{wav_file_name}")
-
+                        
+                        while True:
+                            ret, frame = cap.read()
+                            if ret:
+                                if cc % 40 == 0:
+                                    _, buffer = cv2.imencode('.jpg', frame)  
+                                    frame_base64 = base64.b64encode(buffer).decode("utf-8")
+                                    #channel.basic_publish(exchange='', routing_key=f"{uid}_frames", body=frame_base64)
+                                    stream_data['frame'] = frame_base64
+                            else:
+                                cap.release()
+                                break
+                            cc+=1
+                        wav_file_name = filename[:-4]+".wav"
+                        
+                        command = ["ffmpeg", "-i" ,f"{vid_dir}/{filename}","-acodec", "pcm_s16le" ,"-ac", "1", "-ar" ,"16000","-y", 
+                        f"{aud_dir}/{wav_file_name}" ]
+                        
+                        process_audio = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        audio_base64 = base64.b64encode(open(f"{aud_dir}/{wav_file_name}", "rb").read()).decode("utf-8")
+                        #channel.basic_publish(exchange='', routing_key=f"{uid}_audio", body=audio_base64)
+                        stream_data['audio'] = audio_base64
+                        serialized_stream_data = json.dumps(stream_data)
+                        channel.basic_publish(exchange='', routing_key=f"{uid}_stream_data", body=serialized_stream_data)
+                        if os.path.exists(f"{vid_dir}/{filename}"):
+                            os.remove(f"{vid_dir}/{filename}") 
+                        if os.path.exists(f"{aud_dir}/{wav_file_name}"):
+                            os.remove(f"{aud_dir}/{wav_file_name}")
+        except Exception as e:
+            print("An exception occurred:", e)    
     stream_monitor_thread.join()
     process_main.terminate()
     print("process terminated")
