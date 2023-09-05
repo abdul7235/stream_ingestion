@@ -80,7 +80,9 @@ def publisher(rtmp_link, uid):
                         audio_base64 = base64.b64encode(open(f"{aud_dir}/{wav_file_name}", "rb").read()).decode("utf-8")
                         #channel.basic_publish(exchange='', routing_key=f"{uid}_audio", body=audio_base64)
                         stream_data['audio'] = audio_base64
+                        stream_data['flag'] = False
                         serialized_stream_data = json.dumps(stream_data)
+
                         channel.basic_publish(exchange='', routing_key=f"{uid}_stream_data", body=serialized_stream_data)
                         if os.path.exists(f"{vid_dir}/{filename}"):
                             os.remove(f"{vid_dir}/{filename}") 
@@ -88,6 +90,9 @@ def publisher(rtmp_link, uid):
                             os.remove(f"{aud_dir}/{wav_file_name}")
         except Exception as e:
             print("An exception occurred:", e)    
+    stream_data = {'flag' : True}
+    serialized_stream_data = json.dumps(stream_data)
+    channel.basic_publish(exchange='', routing_key=f"{uid}_stream_data", body=serialized_stream_data)
     stream_monitor_thread.join()
     process_main.terminate()
     print("process terminated")

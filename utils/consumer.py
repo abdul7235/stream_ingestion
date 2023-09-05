@@ -10,8 +10,6 @@ import threading
 from queue_message_count import message_count
 import time
 
-last_message_time = time.time()
-consecutive_zero_count = 0
 
 # RabbitMQ connection parameters
 RABBITMQ_HOST = 'localhost'
@@ -33,24 +31,28 @@ def save_audio(uid, timestamp, audio_data):
         # Convert audio_data to bytes before writing
         wav_file.writeframes(audio_data.encode())
 
-'''def callback(ch, method, properties, body, stop_flag, connection):
-    data = json.loads(body)
-    uid = data['uid']
-    timestamp = data['timestamp']
-    frame_data = data['frame']
-    audio_data = data['audio']
-
-    save_image_frame(uid, timestamp, frame_data)
-    save_audio(uid, timestamp, audio_data)
-
-    print(f"Processed message: {uid}_{timestamp}")
-
-    if stop_flag[0] == True:
-        ch.stop_consuming()
-        #connection.close()'''
-
-
 def callback(ch, method, properties, body):
+    data = json.loads(body)
+    if data['flag'] == True:
+        print(data['flag'])
+        ch.stop_consuming() 
+        print("stopping to consume")
+    else:
+        uid = data['uid']
+        timestamp = data['timestamp']
+        frame_data = data['frame']
+        audio_data = data['audio']
+
+        save_image_frame(uid, timestamp, frame_data)
+        save_audio(uid, timestamp, audio_data)
+
+        print(f"Processed message: {uid}_{timestamp}")
+
+
+
+
+
+'''def callback(ch, method, properties, body):
     global last_message_time
     global consecutive_zero_count
     
@@ -76,23 +78,22 @@ def callback(ch, method, properties, body):
                 ch.stop_consuming()
                 exit()
         else:
-            consecutive_zero_count = 0
+            consecutive_zero_count = 0'''
 
 
 
 def subscriber(uid):
     connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
     channel = connection.channel()
-    stop_flag= [False]
+    #stop_flag= [False]
     QUEUE_NAME = f"{uid}_stream_data"
     channel.queue_declare(queue=QUEUE_NAME)
     #thread_message_count = threading.Thread(target=message_count, args=(stop_flag, QUEUE_NAME))
     #thread_message_count.start()
     #callback_wrapper = lambda ch, method, properties, body: callback(ch, method, properties, body, stop_flag,connection)
     channel.basic_consume(queue=QUEUE_NAME, on_message_callback=callback, auto_ack=True)
-
     print("Waiting for messages. To exit press CTRL+C")
     channel.start_consuming()
 
 
-subscriber('123456')
+subscriber('12345')
